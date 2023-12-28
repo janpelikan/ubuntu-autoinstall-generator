@@ -6,7 +6,7 @@ function cleanup() {
         trap - SIGINT SIGTERM ERR EXIT
         if [ -n "${tmpdir+x}" ]; then
                 rm -rf "${tmpdir}"
-                log "🚽 Deleted temporary working directory ${tmpdir}"
+                log "🧹 Deleted temporary working directory ${tmpdir}"
         fi
 }
 
@@ -31,7 +31,7 @@ usage() {
         cat <<EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [-a] [-e] [-u user-data-file] [-m meta-data-file] [-k] [-c] [-r] [-s source-iso-file] [-d destination-iso-file]
 
-💁 This script will create fully-automated Ubuntu 20.04 Focal Fossa installation media.
+💁 This script will create fully-automated Ubuntu Focal or Jammy installation media.
 
 Available options:
 
@@ -66,8 +66,8 @@ function parse_params() {
         # default values of variables set from params
         user_data_file=''
         meta_data_file=''
-        download_url="https://cdimage.ubuntu.com/ubuntu-server/focal/daily-live/current"
-        download_iso="focal-live-server-amd64.iso"
+        download_url="https://cdimage.ubuntu.com/ubuntu-server/jammy/daily-live/current"
+        download_iso="jammy-live-server-amd64.iso"
         original_iso="ubuntu-original-${today}.iso"
         source_iso="${script_dir}/${original_iso}"
         destination_iso="${script_dir}/ubuntu-autoinstall-${today}.iso"
@@ -77,6 +77,7 @@ function parse_params() {
         use_hwe_kernel=0
         md5_checksum=1
         use_release_iso=0
+        image_type=''
 
         while :; do
                 case "${1-}" in
@@ -103,15 +104,34 @@ function parse_params() {
                         meta_data_file="${2-}"
                         shift
                         ;;
+                -i | --image-type)
+                    case "${2-}" in
+                        jammy|focal|22.04|20.04|2204|2004)
+                            case "${2-}" in
+                                22.04 | 2204) image_type="jammy" ;;
+                                20.04 | 2004) image_type="focal" ;;
+                                *) image_type="${2-}" ;;
+                            esac
+                            shift
+                            ;;
+                        *)
+                            die "Invalid image type: ${2-}. Accepted values are jammy, focal, 22.04, 20.04, 2204, or 2004."
+                            ;;
+                    esac
+                        ;;
                 -?*) die "Unknown option: $1" ;;
                 *) break ;;
                 esac
                 shift
         done
 
-        log "⚙️  Starting up..."
+        log "⏫ Starting up..."
 
         # check required params and arguments
+        if [[ -n "${use_release_iso}" || (-z "${source_iso}" && -z "${use_release_iso}") ]]; then
+                [[ -z "${image_type}" ]] && die "💥 image type not defined. Accepted values are jammy, focal, 22.04, 20.04, 2204, or 2004."
+        fi
+
         if [ ${all_in_one} -ne 0 ]; then
                 [[ -z "${user_data_file}" ]] && die "💥 user-data file was not specified."
                 [[ ! -f "$user_data_file" ]] && die "💥 user-data file could not be found."
@@ -123,9 +143,9 @@ function parse_params() {
         fi
 
         if [ "${use_release_iso}" -eq 1 ]; then
-                download_url="https://releases.ubuntu.com/focal"
+                download_url="https://releases.ubuntu.com/${image_type}"
                 log "🔎 Checking for current release..."
-                download_iso=$(curl -sSL "${download_url}" | grep -oP 'ubuntu-20\.04\.\d*-live-server-amd64\.iso' | head -n 1)
+                download_iso=$(curl -sSL "${download_url}" | grep -oP 'ubuntu-2[0|2]\.04\.\d*-live-server-amd64\.iso' | head -n 1)
                 original_iso="${download_iso}"
                 source_iso="${script_dir}/${download_iso}"
                 current_release=$(echo "${download_iso}" | cut -f2 -d-)
@@ -159,12 +179,12 @@ log "🔎 Checking for required utilities..."
 [[ ! -x "$(command -v sed)" ]] && die "💥 sed is not installed. On Ubuntu, install the 'sed' package."
 [[ ! -x "$(command -v curl)" ]] && die "💥 curl is not installed. On Ubuntu, install the 'curl' package."
 [[ ! -x "$(command -v gpg)" ]] && die "💥 gpg is not installed. On Ubuntu, install the 'gpg' package."
-[[ ! -x "$(command -v 7z)" ]] && die "💥 7z is not installed. On Ubuntu, install the '7z' package."
+[[ ! -x "$(command -v 7z)" ]] && die "💥 7z is not installed. On Ubuntu, install the 'p7zip-full' package."
 [[ ! -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]] && die "💥 isolinux is not installed. On Ubuntu, install the 'isolinux' package."
 log "👍 All required utilities are installed."
 
 if [ ! -f "${source_iso}" ]; then
-        log "🌎 Downloading ISO image for Ubuntu 20.04 Focal Fossa..."
+        log "🌎 Downloading ISO image for Ubuntu ${image_type^}..."
         curl -NsSL "${download_url}/${download_iso}" -o "${source_iso}"
         log "👍 Downloaded and saved to ${source_iso}"
 else
