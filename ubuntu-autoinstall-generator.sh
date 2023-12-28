@@ -2,32 +2,32 @@
 set -Eeuo pipefail
 
 # shellcheck disable=SC2317
-function cleanup() {
+function _cleanup() {
         trap - SIGINT SIGTERM ERR EXIT
         if [ -n "${tmpdir+x}" ]; then
                 rm -rf "${tmpdir}"
-                log "🧹 Deleted temporary working directory ${tmpdir}"
+                _log "🧹 Deleted temporary working directory ${tmpdir}"
         fi
 }
 
-trap cleanup SIGINT SIGTERM ERR EXIT
+trap _cleanup SIGINT SIGTERM ERR EXIT
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 [[ ! -x "$(command -v date)" ]] && echo "💥 date command not found." && exit 1
 today=$(date +"%Y-%m-%d")
 
-function log() {
+function _log() {
         echo >&2 -e "[$(date +"%Y-%m-%d %H:%M:%S")] ${1-}"
 }
 
-function die() {
+function _die() {
         local msg=$1
         local code=${2-1} # Bash parameter expansion - default exit status 1. See https://wiki.bash-hackers.org/syntax/pe#use_a_default_value
-        log "$msg"
+        _log "$msg"
         exit "$code"
 }
 
-usage() {
+_usage() {
         cat <<EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [-a] [-e] [-u user-data-file] [-m meta-data-file] [-k] [-c] [-r] [-s source-iso-file] [-d destination-iso-file]
 
@@ -58,11 +58,12 @@ Available options:
                         That file will be used by default if it already exists.
 -d, --destination       Destination ISO file. By default ${script_dir}/ubuntu-autoinstall-${today}.iso will be
                         created, overwriting any existing file.
+-i, --image-type        Select major release when using parameters -r, --use-release-iso or not using -s, --source.
 EOF
         exit
 }
 
-function parse_params() {
+function _parse_params() {
         # default values of variables set from params
         user_data_file=''
         meta_data_file=''
@@ -81,7 +82,7 @@ function parse_params() {
 
         while :; do
                 case "${1-}" in
-                -h | --help) usage ;;
+                -h | --help) _usage ;;
                 -v | --verbose) set -x ;;
                 -a | --all-in-one) all_in_one=1 ;;
                 -e | --use-hwe-kernel) use_hwe_kernel=1 ;;
@@ -115,42 +116,42 @@ function parse_params() {
                             shift
                             ;;
                         *)
-                            die "Invalid image type: ${2-}. Accepted values are jammy, focal, 22.04, 20.04, 2204, or 2004."
+                            _die "Invalid image type: ${2-}. Accepted values are jammy, focal, 22.04, 20.04, 2204, or 2004."
                             ;;
                     esac
                         ;;
-                -?*) die "Unknown option: $1" ;;
+                -?*) _die "Unknown option: $1" ;;
                 *) break ;;
                 esac
                 shift
         done
 
-        log "⏫ Starting up..."
+        _log "⏫ Starting up..."
 
         # check required params and arguments
         if [[ -n "${use_release_iso}" || (-z "${source_iso}" && -z "${use_release_iso}") ]]; then
-                [[ -z "${image_type}" ]] && die "💥 image type not defined. Accepted values are jammy, focal, 22.04, 20.04, 2204, or 2004."
+                [[ -z "${image_type}" ]] && _die "💥 image type not defined. Accepted values are jammy, focal, 22.04, 20.04, 2204, or 2004."
         fi
 
         if [ ${all_in_one} -ne 0 ]; then
-                [[ -z "${user_data_file}" ]] && die "💥 user-data file was not specified."
-                [[ ! -f "$user_data_file" ]] && die "💥 user-data file could not be found."
-                [[ -n "${meta_data_file}" ]] && [[ ! -f "${meta_data_file}" ]] && die "💥 meta-data file could not be found."
+                [[ -z "${user_data_file}" ]] && _die "💥 user-data file was not specified."
+                [[ ! -f "$user_data_file" ]] && _die "💥 user-data file could not be found."
+                [[ -n "${meta_data_file}" ]] && [[ ! -f "${meta_data_file}" ]] && _die "💥 meta-data file could not be found."
         fi
 
         if [ "${source_iso}" != "${script_dir}/${original_iso}" ]; then
-                [[ ! -f "${source_iso}" ]] && die "💥 Source ISO file could not be found."
+                [[ ! -f "${source_iso}" ]] && _die "💥 Source ISO file could not be found."
         fi
 
         if [ "${use_release_iso}" -eq 1 ]; then
                 download_url="https://releases.ubuntu.com/${image_type}"
-                log "🔎 Checking for current release..."
+                _log "🔎 Checking for current release..."
                 download_iso=$(curl -sSL "${download_url}" | grep -oP 'ubuntu-2[0|2]\.04\.\d*-live-server-amd64\.iso' | head -n 1)
                 original_iso="${download_iso}"
                 source_iso="${script_dir}/${download_iso}"
                 current_release=$(echo "${download_iso}" | cut -f2 -d-)
                 sha_suffix="${current_release}"
-                log "💿 Current release is ${current_release}"
+                _log "💿 Current release is ${current_release}"
         fi
 
         destination_iso=$(realpath "${destination_iso}")
@@ -164,65 +165,65 @@ isolinux_version="bionic,focal"
 
 ubuntu_gpg_key_id="843938DF228D22F7B3742BC0D94AA3F0EFE21092"
 
-parse_params "$@"
+_parse_params "$@"
 
 tmpdir=$(mktemp -d)
 
 if [[ ! "${tmpdir}" || ! -d "${tmpdir}" ]]; then
-        die "💥 Could not create temporary working directory."
+        _die "💥 Could not create temporary working directory."
 else
-        log "📁 Created temporary working directory ${tmpdir}"
+        _log "📁 Created temporary working directory ${tmpdir}"
 fi
 
-log "🔎 Checking for required utilities..."
-[[ ! -x "$(command -v xorriso)" ]] && die "💥 xorriso is not installed. On Ubuntu, install  the 'xorriso' package."
-[[ ! -x "$(command -v sed)" ]] && die "💥 sed is not installed. On Ubuntu, install the 'sed' package."
-[[ ! -x "$(command -v curl)" ]] && die "💥 curl is not installed. On Ubuntu, install the 'curl' package."
-[[ ! -x "$(command -v gpg)" ]] && die "💥 gpg is not installed. On Ubuntu, install the 'gpg' package."
-[[ ! -x "$(command -v 7z)" ]] && die "💥 7z is not installed. On Ubuntu, install the 'p7zip-full' package."
-[[ ! -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]] && die "💥 isolinux is not installed. On Ubuntu, install the 'isolinux' package."
-log "👍 All required utilities are installed."
+_log "🔎 Checking for required utilities..."
+[[ ! -x "$(command -v xorriso)" ]] && _die "💥 xorriso is not installed. On Ubuntu, install  the 'xorriso' package."
+[[ ! -x "$(command -v sed)" ]] && _die "💥 sed is not installed. On Ubuntu, install the 'sed' package."
+[[ ! -x "$(command -v curl)" ]] && _die "💥 curl is not installed. On Ubuntu, install the 'curl' package."
+[[ ! -x "$(command -v gpg)" ]] && _die "💥 gpg is not installed. On Ubuntu, install the 'gpg' package."
+[[ ! -x "$(command -v 7z)" ]] && _die "💥 7z is not installed. On Ubuntu, install the 'p7zip-full' package."
+[[ ! -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]] && _die "💥 isolinux is not installed. On Ubuntu, install the 'isolinux' package."
+_log "👍 All required utilities are installed."
 
 if [ ! -f "${source_iso}" ]; then
-        log "🌎 Downloading ISO image for Ubuntu ${image_type^}..."
+        _log "🌎 Downloading ISO image for Ubuntu ${image_type^}..."
         curl -NsSL "${download_url}/${download_iso}" -o "${source_iso}"
-        log "👍 Downloaded and saved to ${source_iso}"
+        _log "👍 Downloaded and saved to ${source_iso}"
 else
-        log "☑️  Using existing ${source_iso} file."
+        _log "☑️  Using existing ${source_iso} file."
         if [ ${gpg_verify} -eq 1 ]; then
                 if [ "${source_iso}" != "${script_dir}/${original_iso}" ]; then
-                        log "⚠️ Automatic GPG verification is enabled. If the source ISO file is not the latest daily or release image, verification will fail!"
+                        _log "⚠️ Automatic GPG verification is enabled. If the source ISO file is not the latest daily or release image, verification will fail!"
                 fi
         fi
 fi
 
 if [ ${gpg_verify} -eq 1 ]; then
         if [ ! -f "${script_dir}/SHA256SUMS-${sha_suffix}" ]; then
-                log "🌎 Downloading SHA256SUMS & SHA256SUMS.gpg files..."
+                _log "🌎 Downloading SHA256SUMS & SHA256SUMS.gpg files..."
                 curl -NsSL "${download_url}/SHA256SUMS" -o "${script_dir}/SHA256SUMS-${sha_suffix}"
                 curl -NsSL "${download_url}/SHA256SUMS.gpg" -o "${script_dir}/SHA256SUMS-${sha_suffix}.gpg"
         else
-                log "☑️ Using existing SHA256SUMS-${sha_suffix} & SHA256SUMS-${sha_suffix}.gpg files."
+                _log "☑️ Using existing SHA256SUMS-${sha_suffix} & SHA256SUMS-${sha_suffix}.gpg files."
         fi
 
         if [ ! -f "${script_dir}/${ubuntu_gpg_key_id}.keyring" ]; then
-                log "🌎 Downloading and saving Ubuntu signing key..."
+                _log "🌎 Downloading and saving Ubuntu signing key..."
                 gpg -q --no-default-keyring --keyring "${script_dir}/${ubuntu_gpg_key_id}.keyring" --keyserver "hkp://keyserver.ubuntu.com" --recv-keys "${ubuntu_gpg_key_id}"
-                log "👍 Downloaded and saved to ${script_dir}/${ubuntu_gpg_key_id}.keyring"
+                _log "👍 Downloaded and saved to ${script_dir}/${ubuntu_gpg_key_id}.keyring"
         else
-                log "☑️ Using existing Ubuntu signing key saved in ${script_dir}/${ubuntu_gpg_key_id}.keyring"
+                _log "☑️ Using existing Ubuntu signing key saved in ${script_dir}/${ubuntu_gpg_key_id}.keyring"
         fi
 
-        log "🔐 Verifying ${source_iso} integrity and authenticity..."
+        _log "🔐 Verifying ${source_iso} integrity and authenticity..."
         # gpg -q --keyring "${script_dir}/${ubuntu_gpg_key_id}.keyring" --verify "${script_dir}/SHA256SUMS-${sha_suffix}.gpg" "${script_dir}/SHA256SUMS-${sha_suffix}" 2>/dev/null
         # if [ $? -ne 0 ]; then
         #         rm -f "${script_dir}/${ubuntu_gpg_key_id}.keyring~"
-        #         die "👿 Verification of SHA256SUMS signature failed."
+        #         _die "👿 Verification of SHA256SUMS signature failed."
         # fi
 
         if ! gpg -q --keyring "${script_dir}/${ubuntu_gpg_key_id}.keyring" --verify "${script_dir}/SHA256SUMS-${sha_suffix}.gpg" "${script_dir}/SHA256SUMS-${sha_suffix}" 2>/dev/null; then
                 rm -f "${script_dir}/${ubuntu_gpg_key_id}.keyring~"
-                die "👿 Verification of SHA256SUMS signature failed."
+                _die "👿 Verification of SHA256SUMS signature failed."
         fi
 
         rm -f "${script_dir}/${ubuntu_gpg_key_id}.keyring~"
@@ -230,36 +231,36 @@ if [ ${gpg_verify} -eq 1 ]; then
         set +e
         # grep -Fq "$digest" "${script_dir}/SHA256SUMS-${sha_suffix}"
         # if [ $? -eq 0 ]; then
-        #         log "👍 Verification succeeded."
+        #         _log "👍 Verification succeeded."
         #         set -e
         # else
-        #         die "👿 Verification of ISO digest failed."
+        #         _die "👿 Verification of ISO digest failed."
         # fi
         if ! grep -Fq "$digest" "${script_dir}/SHA256SUMS-${sha_suffix}"; then
-                log "👍 Verification succeeded."
+                _log "👍 Verification succeeded."
                 set -e
         else
-                die "👿 Verification of ISO digest failed."
+                _die "👿 Verification of ISO digest failed."
         fi
 else
-        log "🤞 Skipping verification of source ISO."
+        _log "🤞 Skipping verification of source ISO."
 fi
-log "🔧 Extracting ISO image..."
+_log "🔧 Extracting ISO image..."
 xorriso -osirrox on -indev "${source_iso}" -extract / "${tmpdir}" &>/dev/null
 chmod -R u+w "${tmpdir}"
 rm -rf "${tmpdir}/"'[BOOT]'
-log "👍 Extracted to ${tmpdir}"
+_log "👍 Extracted to ${tmpdir}"
 
-log "🔎 Checking for ISO version..."
+_log "🔎 Checking for ISO version..."
 iso_version=$(head -n1 "${tmpdir}/md5sum.txt")
 if grep -q -E "${isolinux_version//,/|}" <<< "${iso_version}"; then
   is_isolinux=true
-  log "🚩 Found 'isolinux' version"
+  _log "🚩 Found 'isolinux' version"
 fi
 
 if [ ${use_hwe_kernel} -eq 1 ]; then
         if grep -q "hwe-vmlinuz" "${tmpdir}/boot/grub/grub.cfg"; then
-                log "☑️ Destination ISO will use HWE kernel."
+                _log "☑️ Destination ISO will use HWE kernel."
                 if [ ${is_isolinux} = true ]; then
                         sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "${tmpdir}/isolinux/txt.cfg"
                         sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "${tmpdir}/isolinux/txt.cfg"
@@ -269,20 +270,20 @@ if [ ${use_hwe_kernel} -eq 1 ]; then
                 sed -i -e 's|/casper/vmlinuz|/casper/hwe-vmlinuz|g' "${tmpdir}/boot/grub/loopback.cfg"
                 sed -i -e 's|/casper/initrd|/casper/hwe-initrd|g' "${tmpdir}/boot/grub/loopback.cfg"
         else
-                log "⚠️ This source ISO does not support the HWE kernel. Proceeding with the regular kernel."
+                _log "⚠️ This source ISO does not support the HWE kernel. Proceeding with the regular kernel."
         fi
 fi
 
-log "🧩 Adding autoinstall parameter to kernel command line..."
+_log "🧩 Adding autoinstall parameter to kernel command line..."
 if [ ${is_isolinux} = true ]; then
         sed -i -e 's/---/ autoinstall  ---/g' "${tmpdir}/isolinux/txt.cfg"
 fi
 sed -i -e 's/---/ autoinstall  ---/g' "${tmpdir}/boot/grub/grub.cfg"
 sed -i -e 's/---/ autoinstall  ---/g' "${tmpdir}/boot/grub/loopback.cfg"
-log "👍 Added parameter to UEFI and BIOS kernel command lines."
+_log "👍 Added parameter to UEFI and BIOS kernel command lines."
 
 if [ ${all_in_one} -eq 1 ]; then
-        log "🧩 Adding user-data and meta-data files..."
+        _log "🧩 Adding user-data and meta-data files..."
         mkdir "${tmpdir}/nocloud"
         cp "$user_data_file" "${tmpdir}/nocloud/user-data"
         if [ -n "${meta_data_file}" ]; then
@@ -295,38 +296,38 @@ if [ ${all_in_one} -eq 1 ]; then
         fi
         sed -i -e 's,---,ds=nocloud\\\;s=/cdrom/nocloud/  --- net.ifnames=0 biosdevname=0 ipv6.disable=1 ,g' "${tmpdir}/boot/grub/grub.cfg"
         sed -i -e 's,---,ds=nocloud\\\;s=/cdrom/nocloud/  --- net.ifnames=0 biosdevname=0 ipv6.disable=1 ,g' "${tmpdir}/boot/grub/loopback.cfg"
-        log "👍 Added data and configured kernel command line."
+        _log "👍 Added data and configured kernel command line."
 fi
 
 if [ ${md5_checksum} -eq 1 ]; then
-        log "👷 Updating ${tmpdir}/md5sum.txt with hashes of modified files..."
+        _log "👷 Updating ${tmpdir}/md5sum.txt with hashes of modified files..."
         md5=$(md5sum "${tmpdir}/boot/grub/grub.cfg" | cut -f1 -d ' ')
         sed -i -e 's,^.*[[:space:]] ./boot/grub/grub.cfg,'"$md5"'  ./boot/grub/grub.cfg,' "${tmpdir}/md5sum.txt"
         md5=$(md5sum "${tmpdir}/boot/grub/loopback.cfg" | cut -f1 -d ' ')
         sed -i -e 's,^.*[[:space:]] ./boot/grub/loopback.cfg,'"$md5"'  ./boot/grub/loopback.cfg,' "${tmpdir}/md5sum.txt"
-        log "👍 Updated hashes."
+        _log "👍 Updated hashes."
 else
-        log "🗑️ Clearing MD5 hashes..."
+        _log "🗑️ Clearing MD5 hashes..."
         echo > "${tmpdir}/md5sum.txt"
-        log "👍 Cleared hashes."
+        _log "👍 Cleared hashes."
 fi
 
 if [ ${is_isolinux} = false ]; then
-        log "📦 Extracting from origin ISO image EFI boot data..."
+        _log "📦 Extracting from origin ISO image EFI boot data..."
         7z e "${source_iso}" -o"${tmpdir}/boot/" '[BOOT]/1-Boot-NoEmul.img' &>/dev/null
         7z e "${source_iso}" -o"${tmpdir}/boot/" '[BOOT]/2-Boot-NoEmul.img' &>/dev/null
 fi
 
-log "📦 Repackaging extracted files into an ISO image..."
+_log "📦 Repackaging extracted files into an ISO image..."
 cd "${tmpdir}"
 
 if [ ${is_isolinux} = true ]; then
         xorriso -as mkisofs -r -V "ubuntu-autoinstall-${today}" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
 else
-        sudo xorriso -as mkisofs -r -V "ubuntu-autoinstall-${today}" --grub2-mbr "${tmpdir}/boot/1-Boot-NoEmul.img" -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b "${tmpdir}/boot/2-Boot-NoEmul.img" -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c "boot.catalog" -b "boot/grub/i386-pc/eltorito.img" -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" . &>/dev/null
+        sudo xorriso -as mkisofs -r -V "ubuntu-autoinstall-${today}" --grub2-mbr "${tmpdir}/boot/1-Boot-NoEmul.img" -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b "${tmpdir}/boot/2-Boot-NoEmul.img" -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c "boot.cata_log" -b "boot/grub/i386-pc/eltorito.img" -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" . &>/dev/null
 fi
 
 cd "$OLDPWD"
-log "👍 Repackaged into ${destination_iso}"
+_log "👍 Repackaged into ${destination_iso}"
 
-die "✅ Completed." 0
+_die "✅ Completed." 0
