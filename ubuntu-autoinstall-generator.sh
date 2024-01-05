@@ -59,6 +59,7 @@ Available options:
 -d, --destination       Destination ISO file. By default ${script_dir}/ubuntu-autoinstall-${today}.iso will be
                         created, overwriting any existing file.
 -i, --image-type        Select major release when using parameters -r, --use-release-iso or not using -s, --source.
+-l, --iso-label         Set a label of ISO.
 EOF
         exit
 }
@@ -71,6 +72,7 @@ function _parse_params() {
         download_iso="jammy-live-server-amd64.iso"
         original_iso="ubuntu-original-${today}.iso"
         source_iso="${script_dir}/${original_iso}"
+        iso_label="ubuntu-autoinstall-${today}"
         destination_iso="${script_dir}/ubuntu-autoinstall-${today}.iso"
         sha_suffix="${today}"
         gpg_verify=1
@@ -104,6 +106,20 @@ function _parse_params() {
                 -m | --meta-data)
                         meta_data_file="${2-}"
                         shift
+                        ;;
+                -l | --iso-label)
+                    case "${2-}" in
+                        *[!a-zA-Z0-9-_.]*)
+                            _die "Invalid characters in ISO label: ${2-}"
+                            ;;
+                        *)
+                            if [ ${#2} -gt 32 ]; then
+                                _die "ISO label ${2-} exceeds 32 characters!"
+                            fi
+                            iso_label="${2-}"
+                            ;;
+                    esac
+                    shift
                         ;;
                 -i | --image-type)
                     case "${2-}" in
@@ -322,9 +338,9 @@ _log "📦 Repackaging extracted files into an ISO image..."
 cd "${tmpdir}"
 
 if [ ${is_isolinux} = true ]; then
-        xorriso -as mkisofs -r -V "ubuntu-autoinstall-${today}" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
+        xorriso -as mkisofs -r -V "${iso_label}" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
 else
-        sudo xorriso -as mkisofs -r -V "ubuntu-autoinstall-${today}" --grub2-mbr "${tmpdir}/boot/1-Boot-NoEmul.img" -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b "${tmpdir}/boot/2-Boot-NoEmul.img" -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c "boot.cata_log" -b "boot/grub/i386-pc/eltorito.img" -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" . &>/dev/null
+        xorriso -as mkisofs -r -V "${iso_label}" --grub2-mbr "${tmpdir}/boot/1-Boot-NoEmul.img" -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b "${tmpdir}/boot/2-Boot-NoEmul.img" -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c "boot.cata_log" -b "boot/grub/i386-pc/eltorito.img" -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" . &>/dev/null
 fi
 
 cd "$OLDPWD"
