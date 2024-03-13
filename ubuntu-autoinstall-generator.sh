@@ -197,7 +197,16 @@ _log "🔎 Checking for required utilities..."
 [[ ! -x "$(command -v curl)" ]] && _die "💥 curl is not installed. On Ubuntu, install the 'curl' package."
 [[ ! -x "$(command -v gpg)" ]] && _die "💥 gpg is not installed. On Ubuntu, install the 'gpg' package."
 [[ ! -x "$(command -v 7z)" ]] && _die "💥 7z is not installed. On Ubuntu, install the 'p7zip-full' package."
-[[ ! -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]] && _die "💥 isolinux is not installed. On Ubuntu, install the 'isolinux' package."
+if grep -q -E "${isolinux_version//,/|}" <<< "${image_type}"; then
+        # if OS is Alpine release - for containerized usage
+        if [[ -f /etc/alpine-release ]]; then
+                isohdpfx_path="/usr/share/syslinux/isohdpfx.bin"
+        else
+        # default - use standard path for Debian/Ubuntu
+                isohdpfx_path="/usr/lib/ISOLINUX/isohdpfx.bin"
+        fi
+        [[ ! -f "${isohdpfx_path}" ]] && _die "💥 isolinux is not installed. On Ubuntu, install the 'isolinux' package."
+fi
 _log "👍 All required utilities are installed."
 
 if [ ! -f "${source_iso}" ]; then
@@ -338,7 +347,7 @@ _log "📦 Repackaging extracted files into an ISO image..."
 cd "${tmpdir}"
 
 if [ ${is_isolinux} = true ]; then
-        xorriso -as mkisofs -r -V "${iso_label}" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
+        xorriso -as mkisofs -r -V "${iso_label}" -J -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -isohybrid-mbr "${isohdpfx_path}" -boot-info-table -input-charset utf-8 -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -isohybrid-gpt-basdat -o "${destination_iso}" . &>/dev/null
 else
         xorriso -as mkisofs -r -V "${iso_label}" --grub2-mbr "${tmpdir}/boot/1-Boot-NoEmul.img" -partition_offset 16 --mbr-force-bootable -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b "${tmpdir}/boot/2-Boot-NoEmul.img" -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 -c "boot.cata_log" -b "boot/grub/i386-pc/eltorito.img" -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info -eltorito-alt-boot -e '--interval:appended_partition_2:::' -no-emul-boot -o "${destination_iso}" . &>/dev/null
 fi
